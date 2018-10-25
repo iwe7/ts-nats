@@ -18,3 +18,8 @@ xunit.xml
 logs/*
 reports/*
 tmp/*
+
+.nyc_output/
+benchmark/
+coverage/
+docs/

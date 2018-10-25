@@ -177,28 +177,24 @@ export interface NKeyAuthChallenge {
 
 /** Signs the provided data with an NKey. Returns a buffer with the signature. */
 export interface ChallengeSigner {
-    (data: Buffer): Promise<Buffer>;
+    (data: Buffer): Buffer;
 }
 
 /** Returns a string providing ACL. Typically ACLs will be in form of a JWT token. */
 export interface AccessControlProvider {
-    (): Promise<string>;
+    (): string;
 }
 
-/** Returns an identifier for the client. Typically this will be the public key used by the [[ChallengeSigner]] */
-export interface Identifier {
-    (): Promise<string>;
-}
 
 /** An object provided by the client for working with JWT and/Nonce based authentication. */
 export interface AuthHandler {
     sign: ChallengeSigner;
-    id: Identifier;
+    id: string;
 }
 
 /** A callback to be invoked when a nonce is presented to the client for authentication */
 export interface NKeyAuthChallengeCallback {
-    (nonce: string): Promise<NKeyAuthChallenge>;
+    (nonce: string): NKeyAuthChallenge;
 }
 
 /** Additional options that can be provided to [[Client.subscribe]]. */

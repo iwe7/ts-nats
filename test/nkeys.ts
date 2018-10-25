@@ -22,18 +22,20 @@ import {
     NatsConnectionOptions,
 } from "../src/nats";
 import url from 'url';
-import {createUser, fromSeed, KeyPair} from 'ts-nkeys'
 import {jsonToNatsConf, writeFile} from "./helpers/nats_conf_utils";
 import {next} from 'nuid';
 import {join} from 'path';
+import {createUser, fromSeed, KeyPair} from 'ts-nkeys';
+import {ErrorCode, NatsError} from "../src/error";
+import {Lock} from "./helpers/latch";
 
 let CONF_DIR = (process.env.TRAVIS) ? process.env.TRAVIS_BUILD_DIR : process.env.TMPDIR;
 
 
 test.before(async (t) => {
-    let u: KeyPair = await createUser();
-    let seed = await u.getSeed();
-    let pk = await u.getPublicKey();
+    let u: KeyPair = createUser();
+    let seed = u.getSeed();
+    let pk = u.getPublicKey();
     let conf = {
         authorization: {
             users: [
@@ -55,30 +57,87 @@ test.after.always((t) => {
     stopServer(t.context.server);
 });
 
-function signer(seed: KeyPair): AuthHandler {
-    let ah = {} as AuthHandler;
-    ah.sign = (data: Buffer): Promise<Buffer> => {
-        return seed.sign(data);
-    };
 
-    ah.id = (): Promise<string> => {
-        return seed.getPublicKey();
-    };
-
-    return ah;
-}
-
-
-test.skip('connect with nkey', async (t) => {
+test.failing('connect with nkey', async (t) => {
     t.plan(1);
     let sc = t.context as SC;
     //@ts-ignore
-    let kp = await fromSeed(sc.seed);
+    let kp = fromSeed(sc.seed);
     let u = new url.URL(sc.server.nats);
-    let nc = await connect({port: parseInt(u.port, 10), authHandler: signer(kp)} as NatsConnectionOptions);
+
+    let ah = {} as AuthHandler;
+
+    function sign(seed: KeyPair) {
+        return function (data: Buffer): Buffer {
+            return seed.sign(data);
+        }
+    }
+
+    ah.sign = sign(kp);
+    ah.id = kp.getPublicKey();
+
+    let nc = await connect({port: parseInt(u.port, 10), authHandler: ah} as NatsConnectionOptions);
     nc.on('connect', () => {
         t.pass();
     });
     await nc.flush();
     nc.close();
+});
+
+test.failing('client error reported', async (t) => {
+    t.plan(1);
+    let sc = t.context as SC;
+    let u = new url.URL(sc.server.nats);
+    //@ts-ignore
+    let ah = {} as AuthHandler;
+
+    function sign() {
+        return function (data: Buffer): Buffer {
+            throw new Error("testing error");
+        }
+    }
+
+    ah.sign = sign();
+    ah.id = "foo";
+
+    let lock = new Lock();
+    let nc = await connect({port: parseInt(u.port, 10), authHandler: ah} as NatsConnectionOptions);
+    nc.addListener('error', (ex) => {
+        t.is(ex.code, ErrorCode.API_ERROR);
+        return lock.unlock();
+    });
+    return lock.latch;
+});
+
+test.failing('wrong user', async (t) => {
+    t.plan(1);
+    let sc = t.context as SC;
+    //@ts-ignore
+    let kp = createUser();
+    let u = new url.URL(sc.server.nats);
+
+    let ah = {} as AuthHandler;
+
+    function sign(seed: KeyPair) {
+        return function (data: Buffer): Buffer {
+            return seed.sign(data);
+        }
+    }
+
+    ah.sign = sign(kp);
+    ah.id = kp.getPublicKey();
+
+
+    let lock = new Lock();
+    let nc = await connect({port: parseInt(u.port, 10), authHandler: ah} as NatsConnectionOptions);
+    nc.on('connect', () => {
+        t.fail("shouldn't have connected");
+        lock.unlock();
+    });
+    nc.addListener('error', (err) => {
+        let ne = err as NatsError;
+        t.is(ne.code, ErrorCode.AUTHORIZATION_VIOLATION);
+        lock.unlock();
+    });
+    return lock.latch;
 });

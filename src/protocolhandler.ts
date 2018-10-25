@@ -581,7 +581,7 @@ export class ProtocolHandler extends EventEmitter {
      *
      * @api private
      */
-    private async processInbound() {
+    private processInbound() {
         // Hold any regex matches.
         let m;
 
@@ -648,7 +648,12 @@ export class ProtocolHandler extends EventEmitter {
 
                         let challengeResponse: (NKeyAuthChallenge | undefined) = undefined;
                         if (this.handlesChallenge()) {
-                            challengeResponse = await this.handleChallenge();
+                            try {
+                                challengeResponse = this.handleChallenge();
+                            } catch (ex) {
+                                let err = new NatsError("client code exception handleChallenge()", ErrorCode.API_ERROR, ex);
+                                this.client.emit('error', err);
+                            }
                         }
 
                         // Always try to read the connect_urls from info
@@ -672,7 +677,7 @@ export class ProtocolHandler extends EventEmitter {
                             // Send the connect message and subscriptions immediately
                             let connect = new Connect(this.options);
                             if (challengeResponse) {
-                                connect.setChallegeResponse(challengeResponse);
+                                connect.setChallengeResponse(challengeResponse);
                             }
                             let cs = JSON.stringify(connect);
                             this.transport.write(`${CONNECT} ${cs}${CR_LF}`);
@@ -764,14 +769,13 @@ export class ProtocolHandler extends EventEmitter {
         return ah && typeof ah.sign === 'function' && this.info.nonce != undefined;
     }
 
-    private async handleChallenge(): Promise<NKeyAuthChallenge> {
+    private handleChallenge(): (NKeyAuthChallenge | undefined) {
         let ah: (AuthHandler | undefined) = this.options.authHandler;
-        if (ah && ah.id && this.info.nonce != undefined) {
-            let values = await Promise.all([ah.sign(Buffer.from(this.info.nonce)), ah.id()]);
-            return Promise.resolve({sig: values[0], nkey: values[1]} as NKeyAuthChallenge);
-        } else {
-            return Promise.reject(undefined);
+        if (ah != undefined && this.info.nonce != undefined) {
+            let sig = ah.sign(Buffer.from(this.info.nonce));
+            return {sig: sig, nkey: ah.id} as NKeyAuthChallenge;
         }
+        return undefined;
     }
 
     /**
@@ -1101,7 +1105,7 @@ export class Connect {
         }
     }
 
-    setChallegeResponse(response: NKeyAuthChallenge) {
+    setChallengeResponse(response: NKeyAuthChallenge) {
         if(response && response.nkey && Buffer.isBuffer(response.sig)) {
             this.nkey = response.nkey;
             this.sig = response.sig.toString('base64');

@@ -44,7 +44,7 @@
     "doc": "node_modules/.bin/typedoc --options ./typedocconfig.ts && touch ./docs/.nojekyll"
   },
   "engines": {
-    "node": ">= 4.5.0"
+    "node": ">= 6.0.0"
   },
   "dependencies": {
     "nuid": "^1.0.0"
@@ -56,7 +56,7 @@
     "dependency-check": "2.5.x",
     "if-node-version": "^1.1.1",
     "nyc": "^12.0.2",
-    "ts-nkeys": "^0.9.0",
+    "ts-nkeys": "^1.0.4",
     "ts-node": "^6.0.3",
     "typedoc": "^0.11.1",
     "typedoc-plugin-markdown": "^1.1.13",
